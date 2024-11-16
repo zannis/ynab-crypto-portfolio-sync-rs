@@ -49,4 +49,13 @@ RUN chown -R app:app /app
 COPY --from=build-env /app/target/release/sync /app/sync
 COPY --from=build-env /app/.env /app/.env
 
+# write a script that runs the binary and waits for 24 hours
+RUN echo "#!/bin/bash \
+    while true; do \
+        ./sync; \
+        sleep 86400; \
+    done
+" > /app/run.sh
+RUN chmod +x /app/run.sh
+
 CMD ["./sync"]
