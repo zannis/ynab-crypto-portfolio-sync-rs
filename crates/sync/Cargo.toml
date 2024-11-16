@@ -1,0 +1,22 @@
+[package]
+name = "sync"
+authors = ["Zannis Kalampoukis <zannis.kal@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+
+[[bin]]
+name = "sync"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+dotenv = "0.15"
+headless_chrome = "1"
+reqwest = { workspace = true, features = ["blocking", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ynab-api = { path = "../ynab-api" }
+tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }

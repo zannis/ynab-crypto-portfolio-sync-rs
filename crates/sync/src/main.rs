@@ -2,12 +2,16 @@ use chrono::{NaiveDate, Utc};
 use dotenv::dotenv;
 use headless_chrome::Browser;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::path::Path;
 use tracing::info;
+use ynab_api::apis::accounts_api::get_accounts;
+use ynab_api::apis::budgets_api::get_budgets;
+use ynab_api::apis::configuration::Configuration;
+use ynab_api::apis::transactions_api::{get_transactions_by_account, update_transaction};
+use ynab_api::models::{ExistingTransaction, PutTransactionWrapper, TransactionClearedStatus};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ExchangeRateResponse {
@@ -16,9 +20,8 @@ struct ExchangeRateResponse {
     rates: HashMap<String, f32>,
 }
 
-struct YnabTransaction {}
-
-fn main() {
+#[tokio::main]
+async fn main() {
     dotenv().ok();
     setup_tracing();
 
@@ -29,29 +32,116 @@ fn main() {
 
     info!("Syncing...");
 
-    let rate = get_exchange_rate("EUR", "USD").unwrap();
+    let rate = get_exchange_rate("EUR", "USD").await.unwrap();
 
-    info!("{rate}");
+    info!("Got exchange rate: {}", rate);
+
+    info!("Getting YNAB account...");
+
+    let ynab_key = get_env_var::<String>("YNAB_KEY");
+
+    let config = ynab_config(&ynab_key);
+
+    let budget = {
+        let budgets = get_budgets(&config, Some(true))
+            .await
+            .expect("Failed to get YNAB budgets");
+
+        info!(
+            "Got {} budgets. Using the first one...",
+            budgets.data.budgets.len()
+        );
+        budgets
+            .data
+            .default_budget
+            .clone()
+            .unwrap_or_else(|| Box::new(budgets.data.budgets.first().unwrap().clone()))
+    };
+
+    info!("Getting accounts for budget {}...", budget.id);
+
+    let account = {
+        let accounts = get_accounts(&ynab_config(&ynab_key), &budget.id.to_string(), None)
+            .await
+            .expect("Failed to get YNAB accounts");
+
+        info!("Got {} accounts", accounts.data.accounts.len());
+
+        accounts
+            .data
+            .accounts
+            .into_iter()
+            .find(|a| a.name == "Crypto")
+            .expect("No crypto account found")
+    };
+
+    let txns = get_transactions_by_account(
+        &config,
+        &budget.id.to_string(),
+        &account.id.to_string(),
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("Failed to get YNAB transactions");
 
     for wallet in wallets {
-        info!("{wallet}");
+        info!("Looking for {wallet} txn...");
 
-        // let total = get_total_from_debank(wallet).unwrap();
-        //
-        // if let Some(total) = total {
-        //     println!("{total}");
-        // } else {
-        //     println!("No total found in debank");
-        //     std::process::exit(1);
-        // }
-        //
-        // let txn = get_ynab_transaction(env::var("YNAB_TRANSACTION").unwrap().as_str()).unwrap();
-        //
-        // update_ynab_crypto_txn(&txn, total.unwrap()).unwrap();
+        let txn = {
+            let txn = txns
+                .data
+                .transactions
+                .iter()
+                .find(|t| t.payee_name == Some(Some(wallet.clone())));
+
+            if txn.is_none() {
+                info!("No txn found for {wallet}");
+                continue;
+            }
+
+            let txn = txn.unwrap();
+
+            info!("Found txn: {:?}", txn.payee_name);
+
+            txn
+        };
+
+        let total_in_usd = {
+            let total_in_usd = get_total_from_debank(&wallet).unwrap();
+
+            if total_in_usd.is_none() {
+                info!("No total found in debank. Skipping...");
+                continue;
+            }
+
+            total_in_usd.unwrap()
+        };
+
+        let total = total_in_usd as f32 / rate * 1000_f32;
+
+        let put_txn: PutTransactionWrapper = PutTransactionWrapper {
+            transaction: Box::new(ExistingTransaction {
+                amount: Some(total as i64),
+                date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
+                cleared: Some(TransactionClearedStatus::Cleared),
+                ..Default::default()
+            }),
+        };
+
+        update_transaction(
+            &config,
+            &budget.id.to_string(),
+            &txn.id.to_string(),
+            put_txn,
+        )
+        .await
+        .expect("Failed to update YNAB transaction");
     }
 }
 
-fn get_total_from_debank(wallet: &str) -> Result<Option<i32>, Box<dyn Error>> {
+fn get_total_from_debank(wallet: &str) -> Result<Option<i64>, Box<dyn Error>> {
     let browser = Browser::default()?;
 
     let tab = browser.new_tab()?;
@@ -68,14 +158,14 @@ fn get_total_from_debank(wallet: &str) -> Result<Option<i32>, Box<dyn Error>> {
     let first_line = text.lines().next().map(Into::into).and_then(|s: String| {
         s.trim_start_matches("$")
             .replace(",", "")
-            .parse::<i32>()
+            .parse::<i64>()
             .ok()
     });
 
     Ok(first_line)
 }
 
-fn get_exchange_rate(base: &str, to: &str) -> Result<f32, Box<dyn Error>> {
+async fn get_exchange_rate(base: &str, to: &str) -> Result<f32, Box<dyn Error>> {
     let file_path = Path::new("exchange_rates.json");
 
     let exchange_rate: Option<ExchangeRateResponse> =
@@ -92,17 +182,16 @@ fn get_exchange_rate(base: &str, to: &str) -> Result<f32, Box<dyn Error>> {
         }
     }
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
 
     let req = client
         .get("https://api.frankfurter.app/latest")
-        .query(&[("access_key", &env::var("EXCHANGE_RATES_IO_KEY")?)])
         .query(&[("base", &base)])
         .query(&[("symbols", &to)]);
 
-    let response = req.send()?;
+    let response = req.send().await?;
 
-    let response = response.json::<ExchangeRateResponse>()?;
+    let response = response.json::<ExchangeRateResponse>().await?;
 
     info!("{response:?}");
 
@@ -113,101 +202,18 @@ fn get_exchange_rate(base: &str, to: &str) -> Result<f32, Box<dyn Error>> {
     Ok(response.rates.get(to).unwrap().clone())
 }
 
-fn get_ynab_transactions() -> Result<Value, Box<dyn Error>> {
-    let client = reqwest::blocking::Client::new();
+fn ynab_config(bearer_access_token: &str) -> Configuration {
+    let mut config = Configuration::new();
 
-    let budget_id = env::var("YNAB_BUDGET")?;
+    config.bearer_access_token = Some(bearer_access_token.to_owned());
 
-    let account_id = env::var("YNAB_ACCOUNT")?;
-
-    let response = client
-        .get(&format!(
-            "https://api.ynab.com/v1/budgets/{budget_id}/accounts/{account_id}/transactions"
-        ))
-        .header("Authorization", format!("Bearer {}", env::var("YNAB_KEY")?))
-        .send()?;
-
-    let response = response.json()?;
-
-    println!("{}", serde_json::to_string_pretty(&response).unwrap());
-
-    Ok(response)
-}
-
-fn get_ynab_transaction(txn_id: &str) -> Result<Value, Box<dyn Error>> {
-    let client = reqwest::blocking::Client::new();
-
-    let budget_id = env::var("YNAB_BUDGET")?;
-
-    let account_id = env::var("YNAB_ACCOUNT")?;
-
-    let response = client.get(&format!("https://api.ynab.com/v1/budgets/{budget_id}/accounts/{account_id}/transactions/{txn_id}"))
-        .header("Authorization", format!("Bearer {}", env::var("YNAB_KEY")?))
-        .send()?;
-
-    let response = response.json::<Value>()?;
-
-    let txn = response
-        .get("data")
-        .and_then(|d| d.get("transaction"))
-        .ok_or("No transaction found")?
-        .clone();
-
-    Ok(txn)
-}
-
-fn update_ynab_crypto_txn(txn: &Value, new_total: i32) -> Result<(), Box<dyn Error>> {
-    let client = reqwest::blocking::Client::new();
-
-    let budget_id = env::var("YNAB_BUDGET")?;
-
-    let transaction_id = env::var("YNAB_TRANSACTION")?;
-
-    let exchange_rate = get_exchange_rate("EUR", "USD")?;
-
-    let amount = new_total as f32 / exchange_rate * 1000_f32;
-
-    println!("exchange_rate: {}", exchange_rate);
-
-    let new_txn = {
-        let mut txn = txn.clone();
-        txn["amount"] = serde_json::Value::from(amount.ceil() as i32);
-        txn["date"] =
-            serde_json::Value::from(Utc::now().date_naive().format("%Y-%m-%d").to_string());
-        txn["cleared"] = serde_json::Value::from("cleared");
-        txn
-    };
-
-    let body = serde_json::json!({
-        "transaction": new_txn
-    });
-
-    println!("new_txn: {}", serde_json::to_string_pretty(&body).unwrap());
-
-    let response = client
-        .put(&format!(
-            "https://api.ynab.com/v1/budgets/{budget_id}/transactions/{transaction_id}"
-        ))
-        .header("Authorization", format!("Bearer {}", env::var("YNAB_KEY")?))
-        .header("Content-Type", "application/json")
-        .body(serde_json::to_string(&body).unwrap())
-        .send()?;
-
-    let response: Value = response.json()?;
-
-    println!("put: {}", serde_json::to_string_pretty(&response).unwrap());
-
-    Ok(())
+    config
 }
 
 fn get_env_var<T: From<String>>(key: &str) -> T {
     env::var(key)
         .expect(&format!("Missing environment variable \"{}\"", key))
         .into()
-}
-
-fn get_env_var_or_default<T: From<String>>(key: &str, default: T) -> T {
-    env::var(key).ok().map_or(default, Into::into)
 }
 
 fn setup_tracing() {
