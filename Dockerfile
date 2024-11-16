@@ -42,7 +42,11 @@ RUN apt-get update && apt-get install -y google-chrome-stable && \
     rm -rf /var/lib/apt/lists/*
 
 # copy the binary from the build-env image
-COPY --from=build-env /app/target/release/sync /sync
-COPY --from=build-env /app/.env /.env
+RUN useradd -ms /bin/bash app_user
+USER app_user
+WORKDIR /app
+RUN chown -R app:app /app
+COPY --from=build-env /app/target/release/sync /app/sync
+COPY --from=build-env /app/.env /app/.env
 
 CMD ["./sync"]
