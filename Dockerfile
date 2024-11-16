@@ -54,8 +54,7 @@ RUN echo "#!/bin/bash \
     while true; do \
         ./sync; \
         sleep 86400; \
-    done
-" > /app/run.sh
+    done" > /app/run.sh
 RUN chmod +x /app/run.sh
 
 CMD ["./sync"]
