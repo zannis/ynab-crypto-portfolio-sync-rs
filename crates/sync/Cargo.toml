@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 dotenv = "0.15"
-headless_chrome = "1"
+headless_chrome = { version = "1", features = ["fetch"] }
 reqwest = { workspace = true, features = ["blocking", "json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

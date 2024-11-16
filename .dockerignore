@@ -1,0 +1,9 @@
+.git/
+target/
+.env
+.env.template
+README.md
+exchange_rates.json
+LICENSE
+.idea/
+*.iml

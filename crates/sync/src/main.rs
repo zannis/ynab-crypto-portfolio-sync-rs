@@ -1,34 +1,39 @@
+mod bitcoin;
+mod evm;
+
+use crate::bitcoin::get_total_from_coinlore;
+use crate::evm::get_total_from_debank;
 use chrono::{NaiveDate, Utc};
 use dotenv::dotenv;
-use headless_chrome::Browser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::path::Path;
+use tokio::task::spawn_blocking;
 use tracing::info;
 use ynab_api::apis::accounts_api::get_accounts;
 use ynab_api::apis::budgets_api::get_budgets;
 use ynab_api::apis::configuration::Configuration;
-use ynab_api::apis::transactions_api::{get_transactions_by_account, update_transaction};
-use ynab_api::models::{ExistingTransaction, PutTransactionWrapper, TransactionClearedStatus};
+use ynab_api::apis::transactions_api::{
+    create_transaction, get_transactions_by_account, update_transaction,
+};
+use ynab_api::models::{
+    ExistingTransaction, NewTransaction, PostTransactionsWrapper, PutTransactionWrapper,
+    TransactionClearedStatus,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ExchangeRateResponse {
     base: String,
     date: NaiveDate,
-    rates: HashMap<String, f32>,
+    rates: HashMap<String, f64>,
 }
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
     setup_tracing();
-
-    let wallets = get_env_var::<String>("WALLETS")
-        .split(",")
-        .map(Into::into)
-        .collect::<Vec<String>>();
 
     info!("Getting YNAB account...");
 
@@ -86,7 +91,44 @@ async fn main() {
 
     info!("Got exchange rate: {}", rate);
 
-    for wallet in wallets {
+    let values = spawn_blocking(|| {
+        let evm_wallets = get_env_var::<String>("EVM_WALLETS")
+            .split(",")
+            .map(Into::into)
+            .collect::<Vec<String>>();
+
+        let bitcoin_wallets = get_env_var::<String>("BITCOIN_WALLETS")
+            .split(",")
+            .map(Into::into)
+            .collect::<Vec<String>>();
+
+        let evm_values = evm_wallets
+            .iter()
+            .filter_map(|wallet| {
+                get_total_from_debank(&wallet)
+                    .unwrap()
+                    .map(|t| (wallet.clone(), t))
+            })
+            .collect::<HashMap<String, f64>>();
+
+        let bitcoin_values = bitcoin_wallets
+            .iter()
+            .filter_map(|wallet| {
+                get_total_from_coinlore(&wallet)
+                    .unwrap()
+                    .map(|t| (wallet.clone(), t))
+            })
+            .collect::<HashMap<String, f64>>();
+
+        evm_values
+            .into_iter()
+            .chain(bitcoin_values)
+            .collect::<HashMap<String, f64>>()
+    })
+    .await
+    .expect("Failed to get wallet value in USD");
+
+    for (wallet, total) in values {
         info!("Looking for {wallet} txn...");
 
         let txn = {
@@ -96,39 +138,50 @@ async fn main() {
                 .iter()
                 .find(|t| t.payee_name == Some(Some(wallet.clone())));
 
-            if txn.is_none() {
-                info!("No txn found for {wallet}");
-                continue;
+            if txn.is_some() {
+                info!("Found txn: {:?}", txn.unwrap().payee_name);
+                Box::new(txn.unwrap().clone())
+            } else {
+                info!("No txn found for {wallet}. Creating a new one...");
+
+                let new_txn = create_transaction(
+                    &config,
+                    &budget.id.to_string(),
+                    PostTransactionsWrapper {
+                        transaction: Some(Box::new(NewTransaction {
+                            account_id: Some(account.id),
+                            date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
+                            amount: Some(0),
+                            payee_id: None,
+                            payee_name: Some(Some(wallet.clone())),
+                            cleared: Some(TransactionClearedStatus::Cleared),
+                            ..Default::default()
+                        })),
+                        transactions: None,
+                    },
+                )
+                .await
+                .expect("Failed to create YNAB transaction");
+
+                new_txn.data.transaction.unwrap()
             }
-
-            let txn = txn.unwrap();
-
-            info!("Found txn: {:?}", txn.payee_name);
-
-            txn
         };
 
-        let total_in_usd = {
-            let total_in_usd = get_total_from_debank(&wallet).unwrap();
-
-            if total_in_usd.is_none() {
-                info!("No total found in debank. Skipping...");
-                continue;
-            }
-
-            total_in_usd.unwrap()
-        };
-
-        let total = if currency == "USD" {
-            total_in_usd * 1000
-        } else {
-            (total_in_usd as f32 / rate * 1000_f32) as i64
+        let total = {
+            let total = if currency != "USD" {
+                total
+            } else {
+                total / rate
+            };
+            let total = total * 1000.0;
+            total.ceil() as i64
         };
 
         let put_txn: PutTransactionWrapper = PutTransactionWrapper {
             transaction: Box::new(ExistingTransaction {
                 amount: Some(total),
                 date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
+                memo: Some(Some(format!("Synced from {wallet}"))),
                 cleared: Some(TransactionClearedStatus::Cleared),
                 ..Default::default()
             }),
@@ -145,31 +198,7 @@ async fn main() {
     }
 }
 
-fn get_total_from_debank(wallet: &str) -> Result<Option<i64>, Box<dyn Error>> {
-    let browser = Browser::default()?;
-
-    let tab = browser.new_tab()?;
-
-    tab.navigate_to(&format!("https://debank.com/profile/{wallet}"))?;
-
-    tab.wait_until_navigated()?;
-
-    let element = tab.find_element("[class^='HeaderInfo_totalAssetInner__']")?;
-
-    let text = element.get_inner_text()?;
-
-    // debank returns the total in USD, without decimals
-    let first_line = text.lines().next().map(Into::into).and_then(|s: String| {
-        s.trim_start_matches("$")
-            .replace(",", "")
-            .parse::<i64>()
-            .ok()
-    });
-
-    Ok(first_line)
-}
-
-async fn get_exchange_rate(base: &str, to: &str) -> Result<f32, Box<dyn Error>> {
+async fn get_exchange_rate(base: &str, to: &str) -> Result<f64, Box<dyn Error>> {
     if base == "USD" {
         return Ok(1.0);
     }
