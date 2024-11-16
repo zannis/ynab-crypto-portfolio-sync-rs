@@ -30,12 +30,6 @@ async fn main() {
         .map(Into::into)
         .collect::<Vec<String>>();
 
-    info!("Syncing...");
-
-    let rate = get_exchange_rate("EUR", "USD").await.unwrap();
-
-    info!("Got exchange rate: {}", rate);
-
     info!("Getting YNAB account...");
 
     let ynab_key = get_env_var::<String>("YNAB_KEY");
@@ -57,6 +51,8 @@ async fn main() {
             .clone()
             .unwrap_or_else(|| Box::new(budgets.data.budgets.first().unwrap().clone()))
     };
+
+    let currency = budget.currency_format.unwrap().unwrap().iso_code;
 
     info!("Getting accounts for budget {}...", budget.id);
 
@@ -85,6 +81,10 @@ async fn main() {
     )
     .await
     .expect("Failed to get YNAB transactions");
+
+    let rate = get_exchange_rate(&currency, "USD").await.unwrap();
+
+    info!("Got exchange rate: {}", rate);
 
     for wallet in wallets {
         info!("Looking for {wallet} txn...");
@@ -119,11 +119,15 @@ async fn main() {
             total_in_usd.unwrap()
         };
 
-        let total = total_in_usd as f32 / rate * 1000_f32;
+        let total = if currency == "USD" {
+            total_in_usd * 1000
+        } else {
+            (total_in_usd as f32 / rate * 1000_f32) as i64
+        };
 
         let put_txn: PutTransactionWrapper = PutTransactionWrapper {
             transaction: Box::new(ExistingTransaction {
-                amount: Some(total as i64),
+                amount: Some(total),
                 date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
                 cleared: Some(TransactionClearedStatus::Cleared),
                 ..Default::default()
@@ -166,6 +170,10 @@ fn get_total_from_debank(wallet: &str) -> Result<Option<i64>, Box<dyn Error>> {
 }
 
 async fn get_exchange_rate(base: &str, to: &str) -> Result<f32, Box<dyn Error>> {
+    if base == "USD" {
+        return Ok(1.0);
+    }
+
     let file_path = Path::new("exchange_rates.json");
 
     let exchange_rate: Option<ExchangeRateResponse> =
