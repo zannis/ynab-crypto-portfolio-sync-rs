@@ -1,7 +1,7 @@
 use headless_chrome::Browser;
 use std::error::Error;
 
-pub fn get_total_from_debank(wallet: &str) -> Result<Option<f64>, Box<dyn Error>> {
+pub async fn get_total_from_debank(wallet: &str) -> Result<Option<f64>, Box<dyn Error>> {
     let browser = Browser::default()?;
 
     let tab = browser.new_tab()?;

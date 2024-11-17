@@ -1,15 +1,19 @@
 use serde::Deserialize;
 use std::error::Error;
 
-pub fn get_total_from_coinlore(wallet: &str) -> Result<Option<f64>, Box<dyn Error + Send + Sync>> {
-    let balance_satoshi = reqwest::blocking::Client::new()
+pub async fn get_total_from_coinlore(
+    wallet: &str,
+) -> Result<Option<f64>, Box<dyn Error + Send + Sync>> {
+    let balance_satoshi = reqwest::Client::new()
         .get(&format!(
             "https://blockchain.info/q/addressbalance/{wallet}"
         ))
-        .send()?
-        .json::<i32>()?;
+        .send()
+        .await?
+        .json::<i32>()
+        .await?;
 
-    let price = get_bitcoin_price_usd()?;
+    let price = get_bitcoin_price_usd().await?;
 
     Ok(Some((balance_satoshi as f64 / 100_000_000.0) * price))
 }
@@ -35,14 +39,15 @@ struct CoinloreTickerResponse {
     msupply: String,
 }
 
-pub fn get_bitcoin_price_usd() -> Result<f64, Box<dyn Error + Send + Sync>> {
-    let client = reqwest::blocking::Client::new();
+pub async fn get_bitcoin_price_usd() -> Result<f64, Box<dyn Error + Send + Sync>> {
+    let client = reqwest::Client::new();
 
     let response = client
         .get("https://api.coinlore.net/api/ticker/?id=90")
-        .send()?;
+        .send()
+        .await?;
 
-    let data = response.json::<Vec<CoinloreTickerResponse>>()?;
+    let data = response.json::<Vec<CoinloreTickerResponse>>().await?;
 
     Ok(data[0].price_usd.parse::<f64>()?)
 }

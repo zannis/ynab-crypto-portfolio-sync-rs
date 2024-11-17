@@ -3,7 +3,6 @@ use crate::get_env_var;
 use binance_api::apis::configuration::{ApiKey, Configuration};
 use binance_api::apis::wallet_api::sapi_v1_asset_wallet_balance_get;
 use std::error::Error;
-use tokio::task::spawn_blocking;
 
 fn config() -> Configuration {
     let mut config = Configuration::default();
@@ -29,7 +28,7 @@ pub async fn get_binance_wallet_value() -> Result<f64, Box<dyn Error + Send + Sy
             .sum()
     };
 
-    let bitcoin_price = spawn_blocking(|| get_bitcoin_price_usd()).await??;
+    let bitcoin_price = get_bitcoin_price_usd().await?;
 
     Ok(balance * bitcoin_price)
 }

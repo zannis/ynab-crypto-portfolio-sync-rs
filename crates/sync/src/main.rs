@@ -1,19 +1,18 @@
 mod binance;
 mod bitcoin;
 mod evm;
+mod exchange;
 
 use crate::binance::get_binance_wallet_value;
 use crate::bitcoin::get_total_from_coinlore;
 use crate::evm::get_total_from_debank;
-use chrono::{NaiveDate, Utc};
+use crate::exchange::get_exchange_rate;
+use chrono::Utc;
 use dotenv::dotenv;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
-use std::error::Error;
-use std::path::Path;
-use tokio::task::spawn_blocking;
-use tracing::info;
+use tokio::join;
+use tracing::{info, warn};
 use ynab_api::apis::accounts_api::get_accounts;
 use ynab_api::apis::budgets_api::get_budgets;
 use ynab_api::apis::configuration::Configuration;
@@ -25,21 +24,15 @@ use ynab_api::models::{
     TransactionClearedStatus,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ExchangeRateResponse {
-    base: String,
-    date: NaiveDate,
-    rates: HashMap<String, f64>,
-}
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
     setup_tracing();
 
-    info!("Getting YNAB account...");
-
     let ynab_key = get_env_var::<String>("YNAB_KEY");
+    let ynab_account_name = get_env_var::<String>("YNAB_ACCOUNT_NAME");
+
+    info!("Getting YNAB account...");
 
     let config = ynab_config(&ynab_key);
 
@@ -49,9 +42,10 @@ async fn main() {
             .expect("Failed to get YNAB budgets");
 
         info!(
-            "Got {} budgets. Using the first one...",
+            "Got {} budgets. Using the default or first one...",
             budgets.data.budgets.len()
         );
+
         budgets
             .data
             .default_budget
@@ -64,7 +58,7 @@ async fn main() {
     info!("Getting accounts for budget {}...", budget.id);
 
     let account = {
-        let accounts = get_accounts(&ynab_config(&ynab_key), &budget.id.to_string(), None)
+        let accounts = get_accounts(&config, &budget.id.to_string(), None)
             .await
             .expect("Failed to get YNAB accounts");
 
@@ -74,8 +68,10 @@ async fn main() {
             .data
             .accounts
             .into_iter()
-            .find(|a| a.name == "Crypto")
-            .expect("No crypto account found")
+            .find(|a| a.name.eq(&ynab_account_name))
+            .expect(&format!(
+                "No account found that matches: {ynab_account_name}. Make sure you have set the YNAB_ACCOUNT_NAME environment variable to an existing account."
+            ))
     };
 
     let txns = get_transactions_by_account(
@@ -89,11 +85,11 @@ async fn main() {
     .await
     .expect("Failed to get YNAB transactions");
 
+    info!("Getting exchange rate...");
+
     let rate = get_exchange_rate(&currency, "USD").await.unwrap();
 
-    info!("Got exchange rate: {}", rate);
-
-    let mut values = spawn_blocking(|| {
+    let mut values = {
         let evm_wallets = get_env_var::<String>("EVM_WALLETS")
             .split(",")
             .map(Into::into)
@@ -104,43 +100,45 @@ async fn main() {
             .map(Into::into)
             .collect::<Vec<String>>();
 
-        info!("Getting EVM wallet values...");
+        info!("Getting wallet values...");
 
-        let evm_values = evm_wallets
-            .iter()
-            .filter_map(|wallet| {
-                get_total_from_debank(&wallet)
-                    .unwrap()
-                    .map(|t| (wallet.clone(), t))
-            })
-            .collect::<HashMap<String, f64>>();
+        let evm_values = async {
+            let mut values = HashMap::new();
+            for wallet in &evm_wallets {
+                if let Ok(Some(total)) = get_total_from_debank(wallet).await {
+                    values.insert(wallet.clone(), total);
+                } else {
+                    warn!("Could not get balance for {wallet}.")
+                }
+            }
+            values
+        };
 
-        info!("Getting bitcoin wallet values...");
+        let bitcoin_values = async {
+            let mut values = HashMap::new();
+            for wallet in &bitcoin_wallets {
+                if let Ok(Some(total)) = get_total_from_coinlore(wallet).await {
+                    values.insert(wallet.clone(), total);
+                } else {
+                    warn!("Could not get balance for {wallet}")
+                }
+            }
+            values
+        };
 
-        let bitcoin_values = bitcoin_wallets
-            .iter()
-            .filter_map(|wallet| {
-                get_total_from_coinlore(&wallet)
-                    .unwrap()
-                    .map(|t| (wallet.clone(), t))
-            })
-            .collect::<HashMap<String, f64>>();
+        let (evm_results, bitcoin_results) = join!(evm_values, bitcoin_values);
 
-        evm_values
+        evm_results
             .into_iter()
-            .chain(bitcoin_values)
+            .chain(bitcoin_results)
             .collect::<HashMap<String, f64>>()
-    })
-    .await
-    .expect("Failed to get wallet value in USD");
+    };
 
     info!("Getting binance wallet value...");
 
     if env::var("BINANCE_API_KEY").is_ok() {
-        values.insert(
-            "Binance".to_string(),
-            get_binance_wallet_value().await.unwrap(),
-        );
+        let binance_wallet_value = get_binance_wallet_value().await.unwrap();
+        values.insert("Binance".to_string(), binance_wallet_value);
     }
 
     for (wallet, total) in values {
@@ -211,45 +209,6 @@ async fn main() {
         .await
         .expect("Failed to update YNAB transaction");
     }
-}
-
-async fn get_exchange_rate(base: &str, to: &str) -> Result<f64, Box<dyn Error>> {
-    if base == "USD" {
-        return Ok(1.0);
-    }
-
-    let file_path = Path::new("exchange_rates.json");
-
-    let exchange_rate: Option<ExchangeRateResponse> =
-        if let Ok(file) = std::fs::File::open(file_path) {
-            serde_json::from_reader(file).ok()
-        } else {
-            std::fs::File::create_new(file_path)?;
-            None
-        };
-
-    if let Some(exchange_rate) = exchange_rate {
-        if Utc::now().date_naive().eq(&exchange_rate.date) && exchange_rate.base == base {
-            return Ok(exchange_rate.rates.get(base).unwrap().clone());
-        }
-    }
-
-    let client = reqwest::Client::new();
-
-    let req = client
-        .get("https://api.frankfurter.app/latest")
-        .query(&[("base", &base)])
-        .query(&[("symbols", &to)]);
-
-    let response = req.send().await?;
-
-    let response = response.json::<ExchangeRateResponse>().await?;
-
-    info!("Exchange rate updated");
-
-    std::fs::write(file_path, serde_json::to_string_pretty(&response)?)?;
-
-    Ok(response.rates.get(to).unwrap().clone())
 }
 
 fn ynab_config(bearer_access_token: &str) -> Configuration {
