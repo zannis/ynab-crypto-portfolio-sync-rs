@@ -1,6 +1,8 @@
+mod binance;
 mod bitcoin;
 mod evm;
 
+use crate::binance::get_binance_wallet_value;
 use crate::bitcoin::get_total_from_coinlore;
 use crate::evm::get_total_from_debank;
 use chrono::{NaiveDate, Utc};
@@ -91,7 +93,7 @@ async fn main() {
 
     info!("Got exchange rate: {}", rate);
 
-    let values = spawn_blocking(|| {
+    let mut values = spawn_blocking(|| {
         let evm_wallets = get_env_var::<String>("EVM_WALLETS")
             .split(",")
             .map(Into::into)
@@ -102,6 +104,8 @@ async fn main() {
             .map(Into::into)
             .collect::<Vec<String>>();
 
+        info!("Getting EVM wallet values...");
+
         let evm_values = evm_wallets
             .iter()
             .filter_map(|wallet| {
@@ -110,6 +114,8 @@ async fn main() {
                     .map(|t| (wallet.clone(), t))
             })
             .collect::<HashMap<String, f64>>();
+
+        info!("Getting bitcoin wallet values...");
 
         let bitcoin_values = bitcoin_wallets
             .iter()
@@ -127,6 +133,15 @@ async fn main() {
     })
     .await
     .expect("Failed to get wallet value in USD");
+
+    info!("Getting binance wallet value...");
+
+    if env::var("BINANCE_API_KEY").is_ok() {
+        values.insert(
+            "Binance".to_string(),
+            get_binance_wallet_value().await.unwrap(),
+        );
+    }
 
     for (wallet, total) in values {
         info!("Looking for {wallet} txn...");
@@ -181,7 +196,7 @@ async fn main() {
             transaction: Box::new(ExistingTransaction {
                 amount: Some(total),
                 date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
-                memo: Some(Some(format!("Synced from {wallet}"))),
+                memo: None,
                 cleared: Some(TransactionClearedStatus::Cleared),
                 ..Default::default()
             }),
@@ -229,8 +244,6 @@ async fn get_exchange_rate(base: &str, to: &str) -> Result<f64, Box<dyn Error>> 
     let response = req.send().await?;
 
     let response = response.json::<ExchangeRateResponse>().await?;
-
-    info!("{response:?}");
 
     info!("Exchange rate updated");
 

@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::error::Error;
 
-pub fn get_total_from_coinlore(wallet: &str) -> Result<Option<f64>, Box<dyn Error>> {
+pub fn get_total_from_coinlore(wallet: &str) -> Result<Option<f64>, Box<dyn Error + Send + Sync>> {
     let balance_satoshi = reqwest::blocking::Client::new()
         .get(&format!(
             "https://blockchain.info/q/addressbalance/{wallet}"
@@ -35,7 +35,7 @@ struct CoinloreTickerResponse {
     msupply: String,
 }
 
-fn get_bitcoin_price_usd() -> Result<f64, Box<dyn Error>> {
+pub fn get_bitcoin_price_usd() -> Result<f64, Box<dyn Error + Send + Sync>> {
     let client = reqwest::blocking::Client::new();
 
     let response = client

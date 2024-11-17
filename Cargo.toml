@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ynab-api", "crates/sync"]
+members = ["crates/ynab-api", "crates/sync", "crates/binance-api"]
 
 [workspace.dependencies]
 serde = { version = "^1.0", features = ["derive"] }
