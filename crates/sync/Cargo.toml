@@ -18,6 +18,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
 binance-api = { path = "../binance-api" }
 ynab-api = { path = "../ynab-api" }
 tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
+uuid = { version = "1.11.0", features = ["v4"] }

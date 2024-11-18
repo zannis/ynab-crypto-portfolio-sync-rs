@@ -8,7 +8,7 @@ fn config() -> Configuration {
     let mut config = Configuration::default();
 
     config.api_key = Some(ApiKey {
-        key: get_env_var("BINANCE_API_KEY"),
+        key: get_env_var("BINANCE_API_KEY").expect("Binance API key should be set"),
         prefix: None,
     });
 
@@ -16,7 +16,7 @@ fn config() -> Configuration {
 }
 
 pub async fn get_binance_wallet_value() -> Result<f64, Box<dyn Error + Send + Sync>> {
-    let secret_key = get_env_var::<String>("BINANCE_SECRET_KEY");
+    let secret_key = get_env_var::<String>("BINANCE_SECRET_KEY")?;
 
     let balance: f64 = {
         let balances =

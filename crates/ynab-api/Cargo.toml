@@ -14,8 +14,8 @@ path = "src/lib.rs"
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_with = { version = "^3.8", default-features = false, features = ["base64", "std", "macros"] }
+serde_with = { version = "^3", default-features = false, features = ["base64", "std", "macros"] }
 serde_repr = "^0.1"
 url = "^2.5"
-uuid = { version = "^1.8", features = ["serde", "v4"] }
+uuid = { workspace = true, features = ["serde", "v4"] }
 reqwest = { workspace = true, features = ["json", "multipart", "blocking"] }
