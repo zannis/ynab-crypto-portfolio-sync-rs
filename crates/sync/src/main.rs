@@ -13,15 +13,15 @@ use std::collections::HashMap;
 use std::env;
 use tokio::join;
 use tracing::{info, warn};
-use ynab_api::apis::accounts_api::get_accounts;
+use ynab_api::apis::accounts_api::{create_account, get_accounts};
 use ynab_api::apis::budgets_api::get_budgets;
 use ynab_api::apis::configuration::Configuration;
 use ynab_api::apis::transactions_api::{
     create_transaction, get_transactions_by_account, update_transaction,
 };
 use ynab_api::models::{
-    ExistingTransaction, NewTransaction, PostTransactionsWrapper, PutTransactionWrapper,
-    TransactionClearedStatus,
+    AccountType, ExistingTransaction, NewTransaction, PostAccountWrapper, PostTransactionsWrapper,
+    PutTransactionWrapper, SaveAccount, TransactionClearedStatus,
 };
 
 #[tokio::main]
@@ -30,7 +30,8 @@ async fn main() {
     setup_tracing();
 
     let ynab_key = get_env_var::<String>("YNAB_KEY");
-    let ynab_account_name = get_env_var::<String>("YNAB_ACCOUNT_NAME");
+    let ynab_account_name =
+        get_env_var_or_default::<String>("YNAB_ACCOUNT_NAME", "Crypto".to_string());
 
     info!("Getting YNAB account...");
 
@@ -64,14 +65,36 @@ async fn main() {
 
         info!("Got {} accounts", accounts.data.accounts.len());
 
-        accounts
+        let account = accounts
             .data
             .accounts
             .into_iter()
-            .find(|a| a.name.eq(&ynab_account_name))
-            .expect(&format!(
-                "No account found that matches: {ynab_account_name}. Make sure you have set the YNAB_ACCOUNT_NAME environment variable to an existing account."
-            ))
+            .find(|a| a.name.eq(&ynab_account_name));
+
+        if account.is_some() {
+            Box::new(account.unwrap())
+        } else {
+            info!(
+                "No YNAB account called `{}` found. Creating it now...",
+                ynab_account_name
+            );
+
+            let response = create_account(
+                &config,
+                &budget.id.to_string(),
+                PostAccountWrapper {
+                    account: Box::new(SaveAccount {
+                        name: ynab_account_name,
+                        balance: 0,
+                        r#type: AccountType::OtherAsset,
+                    }),
+                },
+            )
+            .await
+            .expect("Could not create new YNAB account");
+
+            response.data.account
+        }
     };
 
     let txns = get_transactions_by_account(
@@ -223,6 +246,10 @@ fn get_env_var<T: From<String>>(key: &str) -> T {
     env::var(key)
         .expect(&format!("Missing environment variable \"{}\"", key))
         .into()
+}
+
+fn get_env_var_or_default<T: From<String>>(key: &str, default: T) -> T {
+    env::var(key).map(Into::into).unwrap_or(default)
 }
 
 fn setup_tracing() {
