@@ -95,7 +95,7 @@ async fn main() {
             .map(Into::into)
             .collect::<Vec<String>>();
 
-        let bitcoin_wallets = get_env_var::<String>("BITCOIN_WALLETS")
+        let bitcoin_wallets = get_env_var::<String>("BTC_WALLETS")
             .split(",")
             .map(Into::into)
             .collect::<Vec<String>>();
