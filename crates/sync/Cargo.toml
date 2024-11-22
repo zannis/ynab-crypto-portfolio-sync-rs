@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 alloy-primitives = "0.8"
 bitcoin = "0.32"
+solana-sdk = { version = "1" }
 chrono = { version = "0.4", features = ["serde"] }
 dotenv = "0.15"
 headless_chrome = { version = "1", features = ["fetch"], optional = true }

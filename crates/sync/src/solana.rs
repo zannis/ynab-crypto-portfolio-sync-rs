@@ -3,18 +3,18 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::info;
 
-const SECONDS_TO_SLEEP: u64 = 5;
+const TIMEOUT_SECONDS: u64 = 30;
 
-pub async fn get_evm_wallet_net_worth(wallet: &str) -> Result<Option<f64>, Box<dyn Error>> {
+pub async fn get_solana_wallet_net_worth(wallet: &str) -> Result<Option<f64>, Box<dyn Error>> {
     #[cfg(feature = "headless")]
-    return get_net_worth_from_debank_with_headless_chrome(wallet).await;
+    return get_net_worth_from_step_finance_with_headless_chrome(wallet).await;
 
     #[cfg(feature = "docker")]
-    return get_net_worth_from_debank_with_fantoccini(wallet).await;
+    return get_net_worth_from_step_finance_with_fantoccini(wallet).await;
 }
 
 #[cfg(feature = "headless")]
-pub async fn get_net_worth_from_debank_with_headless_chrome(
+pub async fn get_net_worth_from_step_finance_with_headless_chrome(
     wallet: &str,
 ) -> Result<Option<f64>, Box<dyn Error>> {
     use headless_chrome::{Browser, LaunchOptions};
@@ -29,21 +29,21 @@ pub async fn get_net_worth_from_debank_with_headless_chrome(
 
     let tab = browser.new_tab()?;
 
-    let tab = tab
-        .navigate_to(&format!("https://debank.com/profile/{wallet}"))?
-        .wait_until_navigated()?;
+    info!("Getting balance for {wallet} from Step Finance...");
 
-    info!("Getting balance for {wallet} from Debank...");
+    let tab = tab.navigate_to(&format!(
+        "https://app.step.finance/en/dashboard?watching={wallet}"
+    ))?;
+
     // wait for the async js to finish loading before grabbing the value
-    sleep(Duration::from_secs(SECONDS_TO_SLEEP)).await;
+    sleep(Duration::from_secs(TIMEOUT_SECONDS)).await;
 
-    let text = tab
-        .find_element("[class^='HeaderInfo_totalAssetInner__']")?
-        .get_inner_text()?;
+    let text = tab.get_title()?;
 
     // debank returns the total in USD, without decimals
     let first_line = text.lines().next().map(Into::into).and_then(|s: String| {
         s.trim_start_matches("$")
+            .trim_end_matches(" USD | Step")
             .replace(",", "")
             .parse::<f64>()
             .ok()
@@ -53,7 +53,7 @@ pub async fn get_net_worth_from_debank_with_headless_chrome(
 }
 
 #[cfg(feature = "docker")]
-pub async fn get_net_worth_from_debank_with_fantoccini(
+pub async fn get_net_worth_from_step_finance_with_fantoccini(
     wallet: &str,
 ) -> Result<Option<f64>, Box<dyn Error>> {
     use fantoccini::wd::Capabilities;
@@ -64,7 +64,10 @@ pub async fn get_net_worth_from_debank_with_fantoccini(
     let cap: Capabilities = serde_json::from_value(serde_json::json!({
         "browserName": "chrome",
         "goog:chromeOptions": {
-            "args": ["--headless", "--blink-settings=imagesEnabled=false"]
+            "args": [
+                "--headless",
+                "--blink-settings=imagesEnabled=false"
+            ]
         }
     }))?;
 
@@ -74,18 +77,16 @@ pub async fn get_net_worth_from_debank_with_fantoccini(
         .await
         .expect("Failed to connect to WebDriver");
 
-    c.goto(&format!("https://debank.com/profile/{wallet}"))
-        .await?;
+    c.goto(&format!(
+        "https://app.step.finance/en/dashboard?watching={wallet}"
+    ))
+    .await?;
 
-    info!("Getting balance for {wallet} from Debank...");
+    info!("Getting balance for {wallet} from Step Finance...");
     // wait for the async js to finish loading before grabbing the value
-    sleep(Duration::from_secs(SECONDS_TO_SLEEP)).await;
+    sleep(Duration::from_secs(TIMEOUT_SECONDS)).await;
 
-    let text = c
-        .find(Locator::Css("[class^='HeaderInfo_totalAssetInner__']"))
-        .await?
-        .text()
-        .await?;
+    let text = c.find(Locator::Css("span.net-worth")).await?.text().await?;
 
     // debank returns the total in USD, without decimals
     let first_line = text.lines().next().map(Into::into).and_then(|s: String| {

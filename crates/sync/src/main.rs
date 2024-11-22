@@ -2,20 +2,24 @@ mod binance;
 mod bitcoin;
 mod evm;
 mod exchange;
+mod solana;
 
 use crate::binance::get_binance_wallet_value;
 use crate::bitcoin::get_total_from_coinlore;
-use crate::evm::get_total_from_debank;
+use crate::evm::get_evm_wallet_net_worth;
 use crate::exchange::get_exchange_rate;
+use crate::solana::get_solana_wallet_net_worth;
 use alloy_primitives::Address;
 use chrono::Utc;
 use dotenv::dotenv;
+use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use thiserror::Error;
 use tokio::join;
 use tracing::{error, info, warn};
+use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 use ynab_api::apis::accounts_api::{create_account, get_accounts};
 use ynab_api::apis::budgets_api::get_budgets;
@@ -195,12 +199,19 @@ async fn get_wallet_balances() -> Result<HashMap<String, f64>, SyncError> {
         .map(ToString::to_string)
         .collect::<Vec<_>>();
 
+    let solana_wallets = env::var("SOLANA_WALLETS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|w| Pubkey::from_str(w).is_ok())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
     info!("Getting wallet balances...");
 
     let evm_values = async {
         let mut values = HashMap::new();
         for wallet in &evm_wallets {
-            match get_total_from_debank(wallet).await {
+            match get_evm_wallet_net_worth(wallet).await {
                 Ok(Some(total)) => {
                     values.insert(wallet.clone(), total);
                 }
@@ -233,9 +244,32 @@ async fn get_wallet_balances() -> Result<HashMap<String, f64>, SyncError> {
         values
     };
 
-    let (evm_results, bitcoin_results) = join!(evm_values, bitcoin_values);
+    let solana_values = async {
+        let mut values = HashMap::new();
+        for wallet in &solana_wallets {
+            match get_solana_wallet_net_worth(wallet).await {
+                Ok(Some(total)) => {
+                    values.insert(wallet.clone(), total);
+                }
+                Ok(None) => {
+                    warn!("No value returned for Solana wallet: {}", wallet);
+                }
+                Err(e) => {
+                    error!("Error getting Solana wallet value for {}: {}", wallet, e);
+                }
+            }
+        }
+        values
+    };
 
-    let mut values: HashMap<String, f64> = evm_results.into_iter().chain(bitcoin_results).collect();
+    let (evm_results, bitcoin_results, solana_results) =
+        join!(evm_values, bitcoin_values, solana_values);
+
+    let mut values: HashMap<String, f64> = evm_results
+        .into_iter()
+        .chain(bitcoin_results)
+        .chain(solana_results)
+        .collect();
 
     if env::var("BINANCE_API_KEY").is_ok() {
         info!("Getting binance wallet value...");
@@ -325,13 +359,13 @@ fn ynab_config(bearer_access_token: &str) -> Configuration {
     config
 }
 
-fn get_env_var<T: From<String>>(key: &str) -> Result<T, env::VarError> {
-    env::var(key).map(Into::into)
-}
-
 fn setup_tracing() {
+    // if RUST_LOG is set, use it, otherwise use INFO
+    let env_filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("INFO"))
+        .unwrap();
     let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(env_filter)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");

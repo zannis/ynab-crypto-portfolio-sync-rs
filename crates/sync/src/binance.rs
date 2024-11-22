@@ -1,5 +1,4 @@
 use crate::bitcoin::get_bitcoin_price_usd;
-use crate::get_env_var;
 use binance_api::apis::configuration::{ApiKey, Configuration};
 use binance_api::apis::wallet_api::sapi_v1_asset_wallet_balance_get;
 use std::error::Error;
@@ -8,7 +7,7 @@ fn config() -> Configuration {
     let mut config = Configuration::default();
 
     config.api_key = Some(ApiKey {
-        key: get_env_var("BINANCE_API_KEY").expect("Binance API key should be set"),
+        key: std::env::var("BINANCE_API_KEY").expect("Binance API key should be set"),
         prefix: None,
     });
 
@@ -16,7 +15,7 @@ fn config() -> Configuration {
 }
 
 pub async fn get_binance_wallet_value() -> Result<f64, Box<dyn Error + Send + Sync>> {
-    let secret_key = get_env_var::<String>("BINANCE_SECRET_KEY")?;
+    let secret_key = std::env::var("BINANCE_SECRET_KEY").expect("Binance secret key should be set");
 
     let balance: f64 = {
         let balances =

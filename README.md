@@ -12,8 +12,9 @@ your budget up-to-date with real-time cryptocurrency valuations across multiple 
 - 💰 Multi-platform support:
     - Bitcoin wallets
     - EVM-compatible wallets (Ethereum, Avalanche, Polygon, zkSync, Arbitrum, Optimism)
+    - Solana wallets
     - Binance exchange
-- 🌐 Real-time price updates
+- 🌐 Daily price updates
 - 🔐 Secure API integration
 - 🐳 Docker support
 
@@ -23,7 +24,8 @@ your budget up-to-date with real-time cryptocurrency valuations across multiple 
 
 - Rust toolchain (for running locally) or Docker with Docker Compose
 - YNAB API key ([Get it here](https://app.youneedabudget.com/settings/developer))
-- Wallet addresses or exchange API keys
+- Exchange API keys (optional)
+- Some wallet addresses to track
 
 ### Installation
 
@@ -51,6 +53,7 @@ cp .env.template .env
 | `YNAB_KEY`           | Yes      | Your YNAB API key                                                |
 | `EVM_WALLETS`        | No       | Comma-separated list of EVM-compatible wallet addresses          |
 | `BTC_WALLETS`        | No       | Comma-separated list of Bitcoin wallet addresses                 |
+| `SOLANA_WALLETS`     | No       | Comma-separated list of Solana wallet addresses                  |
 | `YNAB_ACCOUNT_NAME`  | No       | Custom name for your crypto tracking account (default: "Crypto") |
 | `BINANCE_API_KEY`    | No       | Binance API key for exchange integration                         |
 | `BINANCE_SECRET_KEY` | No       | Binance API secret                                               |
@@ -78,9 +81,9 @@ docker compose up
 - [x] Support for Bitcoin wallets
 - [x] Binance integration
 - [x] Historical tracking with daily updates
+- [x] Solana support
 - [ ] Support for additional crypto networks:
     - [ ] Coinbase integration
-    - [ ] Solana support
     - [ ] Algorand support
 - [ ] Portfolio performance tracking
 - [ ] Automated tests
@@ -111,5 +114,3 @@ If you find this project helpful, please consider:
 
 - [YNAB API](https://api.youneedabudget.com/)
 - [Binance API](https://binance-docs.github.io/apidocs/)
-
-```
