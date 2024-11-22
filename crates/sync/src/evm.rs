@@ -15,8 +15,15 @@ pub async fn get_total_from_debank(wallet: &str) -> Result<Option<f64>, Box<dyn 
 pub async fn get_total_from_debank_with_headless_chrome(
     wallet: &str,
 ) -> Result<Option<f64>, Box<dyn Error>> {
-    use headless_chrome::Browser;
-    let browser = Browser::default()?;
+    use headless_chrome::{Browser, LaunchOptions};
+    let browser = Browser::new(
+        LaunchOptions::default_builder()
+            .args(vec![
+                "--headless".as_ref(),
+                "--blink-settings=imagesEnabled=false".as_ref(),
+            ])
+            .build()?,
+    )?;
 
     let tab = browser.new_tab()?;
 
@@ -52,12 +59,12 @@ pub async fn get_total_from_debank_with_fantoccini(
 
     let webdriver_url = std::env::var("WEBDRIVER_URL").unwrap();
 
-    info!("Connecting to WebDriver at {webdriver_url}...");
-
-    let cap: Capabilities = serde_json::from_str(
-        r#"{"browserName":"chrome","goog:chromeOptions":{"args":["--headless"]}}"#,
-    )
-    .unwrap();
+    let cap: Capabilities = serde_json::from_value(serde_json::json!({
+        "browserName": "chrome",
+        "goog:chromeOptions": {
+            "args": ["--headless", "--blink-settings=imagesEnabled=false"]
+        }
+    }))?;
 
     let c = ClientBuilder::native()
         .capabilities(cap)
