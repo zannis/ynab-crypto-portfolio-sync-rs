@@ -27,9 +27,6 @@ ynab-api = { path = "../ynab-api" }
 tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
-# create 2 features for running directly and in docker
-# the first should use headless chrome and the second should use fantoccini
-
 [features]
 default = ["headless"]
 headless = ["headless_chrome"]

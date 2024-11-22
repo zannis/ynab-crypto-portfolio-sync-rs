@@ -15,13 +15,13 @@ your budget up-to-date with real-time cryptocurrency valuations across multiple 
     - Binance exchange
 - 🌐 Real-time price updates
 - 🔐 Secure API integration
-- 🐳 Docker support (WIP)
+- 🐳 Docker support
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Rust toolchain (latest stable)
+- Rust toolchain (for running locally) or Docker with Docker Compose
 - YNAB API key ([Get it here](https://app.youneedabudget.com/settings/developer))
 - Wallet addresses or exchange API keys
 
@@ -57,32 +57,29 @@ cp .env.template .env
 
 ## 🔧 Usage
 
+Make sure you have configured the environment variables in `.env` file and then:
+
 ### Running as a Standalone Binary
 
 ```bash
-cargo run --bin sync
+cargo run
 ```
 
-### Running with Docker (⚠️ WIP)
+### Running with Docker Compose
 
 ```bash
 # Build the Docker image
-docker build -t ynab-crypto-portfolio-sync .
-
-# Run the container
-docker run -it --rm \
-  -v $(pwd)/.env:/app/.env \
-  ynab-crypto-portfolio-sync
+docker compose up
 ```
 
 ## 🗺️ Roadmap
 
+- [ ] Historical tracking with daily updates
 - [ ] Support for additional crypto networks:
     - [ ] Coinbase integration
     - [ ] Solana support
     - [ ] Algorand support
 - [ ] Portfolio performance tracking
-- [ ] Historical data analysis
 - [ ] Automated tests
 
 ## 🤝 Contributing
