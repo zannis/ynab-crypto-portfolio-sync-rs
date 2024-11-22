@@ -1,7 +1,7 @@
 .git/
 target/
-.env
 .env.template
+.env
 README.md
 exchange_rates.json
 LICENSE

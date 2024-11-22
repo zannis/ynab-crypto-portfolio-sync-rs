@@ -1,0 +1,14 @@
+services:
+  webdriver:
+    image: selenium/standalone-chromium
+    ports:
+      - "4445:4444"
+
+  sync:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - WEBDRIVER_URL=http://webdriver:4445
+    depends_on:
+      - webdriver

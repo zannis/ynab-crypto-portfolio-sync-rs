@@ -10,10 +10,13 @@ name = "sync"
 path = "src/main.rs"
 
 [dependencies]
+alloy-primitives = "0.8"
+bitcoin = "0.32"
 chrono = { version = "0.4", features = ["serde"] }
 dotenv = "0.15"
-headless_chrome = { version = "1", features = ["fetch"] }
-reqwest = { workspace = true, features = ["blocking", "json"] }
+headless_chrome = { version = "1", features = ["fetch"], optional = true }
+fantoccini = { version = "0.21", optional = true }
+reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = "0.1"
@@ -23,3 +26,12 @@ binance-api = { path = "../binance-api" }
 ynab-api = { path = "../ynab-api" }
 tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
 uuid = { version = "1.11.0", features = ["v4"] }
+
+# create 2 features for running directly and in docker
+# the first should use headless chrome and the second should use fantoccini
+
+[features]
+default = ["headless"]
+headless = ["headless_chrome"]
+docker = ["fantoccini"]
+

@@ -7,15 +7,16 @@ use crate::binance::get_binance_wallet_value;
 use crate::bitcoin::get_total_from_coinlore;
 use crate::evm::get_total_from_debank;
 use crate::exchange::get_exchange_rate;
+use alloy_primitives::Address;
 use chrono::Utc;
 use dotenv::dotenv;
 use std::collections::HashMap;
 use std::env;
+use std::str::FromStr;
 use thiserror::Error;
 use tokio::join;
 use tracing::{error, info, warn};
 use uuid::Uuid;
-// Added error
 use ynab_api::apis::accounts_api::{create_account, get_accounts};
 use ynab_api::apis::budgets_api::get_budgets;
 use ynab_api::apis::configuration::Configuration;
@@ -27,7 +28,6 @@ use ynab_api::models::{
     PutTransactionWrapper, SaveAccount, TransactionClearedStatus,
 };
 
-// Add custom error type for better error handling
 #[derive(Debug, Error)]
 pub enum SyncError {
     #[error("Environment variable error: {0}")]
@@ -38,20 +38,36 @@ pub enum SyncError {
     ExchangeRate(String),
     #[error("Wallet value error: {0}")]
     WalletValue(String),
+    #[error("Balance sync error: {0}")]
+    BalanceSync(String),
 }
 
 #[tokio::main]
 async fn main() -> Result<(), SyncError> {
+    let docker_enabled = cfg!(feature = "docker");
+    let headless_enabled = cfg!(feature = "headless");
+
+    if docker_enabled && headless_enabled {
+        error!("Features 'docker' and 'headless' cannot be enabled at the same time. Exiting...");
+        std::process::exit(1);
+    }
+
     dotenv().ok();
     setup_tracing();
 
+    let ynab_key = env::var("YNAB_KEY").unwrap_or_else(|_| {
+        error!("YNAB API key is missing. Exiting...");
+        std::process::exit(1)
+    });
+
     info!("Starting crypto portfolio sync...");
 
-    let ynab_key = get_env_var::<String>("YNAB_KEY")?;
-    let ynab_account_name =
-        get_env_var_or_default::<String>("YNAB_ACCOUNT_NAME", "Crypto".to_string());
-
     info!("Getting YNAB account...");
+
+    let ynab_account_name = env::var("YNAB_ACCOUNT_NAME").unwrap_or_else(|_e| {
+        info!("No YNAB account name set, using the default `Crypto` one.");
+        "Crypto".to_string()
+    });
 
     let config = ynab_config(&ynab_key);
 
@@ -84,7 +100,7 @@ async fn main() -> Result<(), SyncError> {
         .await
         .map_err(|e| SyncError::ExchangeRate(e.to_string()))?;
 
-    let values = get_wallet_values().await?;
+    let values = get_wallet_balances().await?;
 
     for (wallet, total) in values {
         update_wallet_transaction(
@@ -164,18 +180,22 @@ async fn get_or_create_account(
     }
 }
 
-async fn get_wallet_values() -> Result<HashMap<String, f64>, SyncError> {
-    let evm_wallets = get_env_var::<String>("EVM_WALLETS")?
+async fn get_wallet_balances() -> Result<HashMap<String, f64>, SyncError> {
+    let evm_wallets = env::var("EVM_WALLETS")
+        .unwrap_or_default()
         .split(',')
+        .filter(|w| Address::from_str(w).is_ok())
         .map(ToString::to_string)
-        .collect::<Vec<String>>();
+        .collect::<Vec<_>>();
 
-    let bitcoin_wallets = get_env_var::<String>("BTC_WALLETS")?
+    let bitcoin_wallets = env::var("BTC_WALLETS")
+        .unwrap_or_default()
         .split(',')
+        .filter(|w| ::bitcoin::Address::from_str(w).is_ok())
         .map(ToString::to_string)
-        .collect::<Vec<String>>();
+        .collect::<Vec<_>>();
 
-    info!("Getting wallet values...");
+    info!("Getting wallet balances...");
 
     let evm_values = async {
         let mut values = HashMap::new();
@@ -241,15 +261,12 @@ async fn update_wallet_transaction(
     rate: f64,
     txns: &ynab_api::models::TransactionsResponse,
 ) -> Result<(), SyncError> {
-    info!("Looking for {} txn...", wallet);
-
     let txn = if let Some(txn) = txns
         .data
         .transactions
         .iter()
         .find(|t| t.payee_name == Some(Some(wallet.to_string())))
     {
-        info!("Found txn: {:?}", txn.payee_name);
         Box::new(txn.clone())
     } else {
         info!("No txn found for {}. Creating a new one...", wallet);
@@ -303,10 +320,6 @@ fn ynab_config(bearer_access_token: &str) -> Configuration {
 
 fn get_env_var<T: From<String>>(key: &str) -> Result<T, env::VarError> {
     env::var(key).map(Into::into)
-}
-
-fn get_env_var_or_default<T: From<String>>(key: &str, default: T) -> T {
-    env::var(key).map(Into::into).unwrap_or(default)
 }
 
 fn setup_tracing() {
