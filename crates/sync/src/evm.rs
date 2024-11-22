@@ -52,6 +52,8 @@ pub async fn get_total_from_debank_with_fantoccini(
 
     let webdriver_url = std::env::var("WEBDRIVER_URL").unwrap();
 
+    info!("Connecting to WebDriver at {webdriver_url}...");
+
     let cap: Capabilities = serde_json::from_str(
         r#"{"browserName":"chrome","goog:chromeOptions":{"args":["--headless"]}}"#,
     )

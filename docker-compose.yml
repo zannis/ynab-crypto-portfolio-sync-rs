@@ -1,14 +1,21 @@
 services:
   webdriver:
     image: selenium/standalone-chromium
-    ports:
-      - "4445:4444"
+    expose:
+      - "4444"
+    environment:
+      - SE_ENABLE_TRACING=false
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:4444" ]
+      start_interval: 2s
+      interval: 1s
 
   sync:
     build: .
     env_file:
       - .env
     environment:
-      - WEBDRIVER_URL=http://webdriver:4445
+      - WEBDRIVER_URL=http://webdriver:4444
     depends_on:
-      - webdriver
+      webdriver:
+        condition: service_healthy
