@@ -261,19 +261,11 @@ async fn update_wallet_transaction(
     rate: f64,
     txns: &ynab_api::models::TransactionsResponse,
 ) -> Result<(), SyncError> {
-    // calculate the new total in milliunits
-    let new_total = (total / rate * 1000.0).ceil() as i64;
-
     let today = Utc::now().date_naive();
 
     let today_str = today.format("%Y-%m-%d").to_string();
 
-    let last_txn = txns
-        .data
-        .transactions
-        .iter()
-        .filter(|t| t.payee_name == Some(Some(wallet.to_string())) && t.date.ne(&today_str))
-        .last();
+    let todays_total = (total / rate * 1000.0).ceil() as i64;
 
     let todays_txn = txns
         .data
@@ -282,14 +274,20 @@ async fn update_wallet_transaction(
         .filter(|t| t.payee_name == Some(Some(wallet.to_string())) && t.date.eq(&today_str))
         .last();
 
-    let last_total = last_txn.map(|t| t.amount).unwrap_or(0);
+    let total_excluding_today: i64 = txns
+        .data
+        .transactions
+        .iter()
+        .filter(|t| t.payee_name == Some(Some(wallet.to_string())) && t.date.ne(&today_str))
+        .map(|t| t.amount)
+        .sum();
 
     if let Some(todays_txn) = todays_txn {
         info!("Balance for {wallet} exists for today. Updating amount...");
 
         let put_txn: PutTransactionWrapper = PutTransactionWrapper {
             transaction: Box::new(ExistingTransaction {
-                amount: Some(new_total - last_total),
+                amount: Some(todays_total - total_excluding_today),
                 cleared: Some(TransactionClearedStatus::Cleared),
                 ..Default::default()
             }),
@@ -306,7 +304,7 @@ async fn update_wallet_transaction(
                 transaction: Some(Box::new(NewTransaction {
                     account_id: Some(account_id.clone()),
                     date: Some(today_str),
-                    amount: Some(new_total - last_total),
+                    amount: Some(todays_total - total_excluding_today),
                     payee_name: Some(Some(wallet.to_string())),
                     cleared: Some(TransactionClearedStatus::Cleared),
                     ..Default::default()
