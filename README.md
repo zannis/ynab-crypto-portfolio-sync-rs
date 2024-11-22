@@ -74,7 +74,10 @@ docker compose up
 
 ## 🗺️ Roadmap
 
-- [ ] Historical tracking with daily updates
+- [x] Support for EVM wallets
+- [x] Support for Bitcoin wallets
+- [x] Binance integration
+- [x] Historical tracking with daily updates
 - [ ] Support for additional crypto networks:
     - [ ] Coinbase integration
     - [ ] Solana support

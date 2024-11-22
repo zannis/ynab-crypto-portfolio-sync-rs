@@ -261,53 +261,62 @@ async fn update_wallet_transaction(
     rate: f64,
     txns: &ynab_api::models::TransactionsResponse,
 ) -> Result<(), SyncError> {
-    let txn = if let Some(txn) = txns
+    // calculate the new total in milliunits
+    let new_total = (total / rate * 1000.0).ceil() as i64;
+
+    let today = Utc::now().date_naive();
+
+    let today_str = today.format("%Y-%m-%d").to_string();
+
+    let last_txn = txns
         .data
         .transactions
         .iter()
-        .find(|t| t.payee_name == Some(Some(wallet.to_string())))
-    {
-        Box::new(txn.clone())
-    } else {
-        info!("No txn found for {}. Creating a new one...", wallet);
+        .filter(|t| t.payee_name == Some(Some(wallet.to_string())) && t.date.ne(&today_str))
+        .last();
 
-        let response = create_transaction(
+    let todays_txn = txns
+        .data
+        .transactions
+        .iter()
+        .filter(|t| t.payee_name == Some(Some(wallet.to_string())) && t.date.eq(&today_str))
+        .last();
+
+    let last_total = last_txn.map(|t| t.amount).unwrap_or(0);
+
+    if let Some(todays_txn) = todays_txn {
+        info!("Balance for {wallet} exists for today. Updating amount...");
+
+        let put_txn: PutTransactionWrapper = PutTransactionWrapper {
+            transaction: Box::new(ExistingTransaction {
+                amount: Some(new_total - last_total),
+                cleared: Some(TransactionClearedStatus::Cleared),
+                ..Default::default()
+            }),
+        };
+
+        update_transaction(config, budget_id, &todays_txn.id.to_string(), put_txn)
+            .await
+            .map_err(|e| SyncError::YnabApi(e.to_string()))?;
+    } else {
+        create_transaction(
             config,
             budget_id,
             PostTransactionsWrapper {
                 transaction: Some(Box::new(NewTransaction {
                     account_id: Some(account_id.clone()),
-                    date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
-                    amount: Some(0),
-                    payee_id: None,
+                    date: Some(today_str),
+                    amount: Some(new_total - last_total),
                     payee_name: Some(Some(wallet.to_string())),
                     cleared: Some(TransactionClearedStatus::Cleared),
                     ..Default::default()
                 })),
-                transactions: None,
+                ..Default::default()
             },
         )
         .await
         .map_err(|e| SyncError::YnabApi(e.to_string()))?;
-
-        response.data.transaction.unwrap()
-    };
-
-    let total = if rate != 1.0 { total / rate } else { total };
-    let total = (total * 1000.0).ceil() as i64;
-
-    let put_txn: PutTransactionWrapper = PutTransactionWrapper {
-        transaction: Box::new(ExistingTransaction {
-            amount: Some(total),
-            date: Some(Utc::now().date_naive().format("%Y-%m-%d").to_string()),
-            cleared: Some(TransactionClearedStatus::Cleared),
-            ..Default::default()
-        }),
-    };
-
-    update_transaction(config, budget_id, &txn.id.to_string(), put_txn)
-        .await
-        .map_err(|e| SyncError::YnabApi(e.to_string()))?;
+    }
 
     Ok(())
 }

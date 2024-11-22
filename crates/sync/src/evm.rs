@@ -3,6 +3,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::info;
 
+const SECONDS_TO_SLEEP: u64 = 5;
+
 pub async fn get_total_from_debank(wallet: &str) -> Result<Option<f64>, Box<dyn Error>> {
     #[cfg(feature = "headless")]
     return get_total_from_debank_with_headless_chrome(wallet).await;
@@ -32,8 +34,8 @@ pub async fn get_total_from_debank_with_headless_chrome(
         .wait_until_navigated()?;
 
     info!("Getting balance for {wallet} from Debank...");
-    // wait 10 seconds for the async js to finish loading before grabbing the value
-    sleep(Duration::from_secs(10)).await;
+    // wait for the async js to finish loading before grabbing the value
+    sleep(Duration::from_secs(SECONDS_TO_SLEEP)).await;
 
     let text = tab
         .find_element("[class^='HeaderInfo_totalAssetInner__']")?
@@ -76,8 +78,8 @@ pub async fn get_total_from_debank_with_fantoccini(
         .await?;
 
     info!("Getting balance for {wallet} from Debank...");
-    // wait 10 seconds for the async js to finish loading before grabbing the value
-    sleep(Duration::from_secs(10)).await;
+    // wait for the async js to finish loading before grabbing the value
+    sleep(Duration::from_secs(SECONDS_TO_SLEEP)).await;
 
     let text = c
         .find(Locator::Css("[class^='HeaderInfo_totalAssetInner__']"))
