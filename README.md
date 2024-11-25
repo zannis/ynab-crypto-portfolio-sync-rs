@@ -1,6 +1,6 @@
 # YNAB Crypto Portfolio Sync 🚀
 
-[![Rust](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/rust.yml)
+[![Rust](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/release.yml/badge.svg)](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Automatically sync your crypto portfolio's value with [YNAB (You Need A Budget)](https://www.youneedabudget.com/). Keep
