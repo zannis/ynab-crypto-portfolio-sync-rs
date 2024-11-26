@@ -1,5 +1,6 @@
 # YNAB Crypto Portfolio Sync 🚀
 
+[![Release](https://img.shields.io/github/v/release/zannis/ynab-crypto-portfolio-sync-rs)](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/releases)
 [![Rust](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/build.yml/badge.svg)](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
