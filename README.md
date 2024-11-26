@@ -1,6 +1,6 @@
 # YNAB Crypto Portfolio Sync 🚀
 
-[![Rust](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/release.yml/badge.svg)](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/release.yml)
+[![Rust](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/build.yml/badge.svg)](https://github.com/zannis/ynab-crypto-portfolio-sync-rs/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Automatically sync your crypto portfolio's value with [YNAB (You Need A Budget)](https://www.youneedabudget.com/). Keep
@@ -23,7 +23,7 @@ your budget up-to-date with real-time cryptocurrency valuations across multiple 
 ### Prerequisites
 
 - Rust toolchain (for running locally) or Docker with Docker Compose
-- YNAB API key ([Get it here](https://app.youneedabudget.com/settings/developer))
+- YNAB Personal Access Token ([Get it here](https://app.youneedabudget.com/settings/developer))
 - Exchange API keys (optional)
 - Some wallet addresses to track
 
@@ -50,7 +50,7 @@ cp .env.template .env
 
 | Variable             | Required | Description                                                      |
 |----------------------|----------|------------------------------------------------------------------|
-| `YNAB_KEY`           | Yes      | Your YNAB API key                                                |
+| `YNAB_ACCESS_TOKEN`  | Yes      | Your YNAB Personal Access Token                                  |
 | `EVM_WALLETS`        | No       | Comma-separated list of EVM-compatible wallet addresses          |
 | `BTC_WALLETS`        | No       | Comma-separated list of Bitcoin wallet addresses                 |
 | `SOLANA_WALLETS`     | No       | Comma-separated list of Solana wallet addresses                  |
@@ -60,15 +60,16 @@ cp .env.template .env
 
 ## 🔧 Usage
 
-Make sure you have configured the environment variables in `.env` file and then:
+Once you have finished the installation, configure the environment variables in your `.env` file and then you can
+either:
 
-### Running as a Standalone Binary
+### Run as a Standalone Binary
 
 ```bash
 cargo run
 ```
 
-### Running with Docker Compose
+### Run with Docker Compose
 
 ```bash
 # Build the Docker image

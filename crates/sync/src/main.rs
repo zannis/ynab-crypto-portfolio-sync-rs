@@ -59,7 +59,7 @@ async fn main() -> Result<(), SyncError> {
     dotenv().ok();
     setup_tracing();
 
-    let ynab_key = env::var("YNAB_KEY").unwrap_or_else(|_| {
+    let ynab_token = env::var("YNAB_ACCESS_TOKEN").unwrap_or_else(|_| {
         error!("YNAB API key is missing. Exiting...");
         std::process::exit(1)
     });
@@ -73,7 +73,7 @@ async fn main() -> Result<(), SyncError> {
         "Crypto".to_string()
     });
 
-    let config = ynab_config(&ynab_key);
+    let config = ynab_config(&ynab_token);
 
     let budget = get_budget(&config).await?;
     let currency = budget
