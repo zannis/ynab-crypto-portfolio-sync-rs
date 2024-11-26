@@ -13,10 +13,16 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: sync
+            asset_name: ynab-crypto-sync-linux-amd64
           - os: windows-latest
             artifact_name: sync.exe
+            asset_name: ynab-crypto-sync-windows.exe
           - os: macos-latest
             artifact_name: sync
+            asset_name: ynab-crypto-sync-macos-silicon
+          - os: macos-15
+            artifact_name: sync
+            asset_name: ynab-crypto-sync-macos-intel
 
     steps:
       - name: Checkout code
@@ -31,16 +37,17 @@ jobs:
       - name: Build project
         run: cargo build --release
 
+      - name: Rename binary
+        run: mv target/release/${{ matrix.artifact_name }} target/release/${{ matrix.asset_name }}
+
       - name: Create release
         uses: softprops/action-gh-release@v2
-        with:
-          files: target/release/${{ matrix.artifact_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/${{ matrix.artifact_name }}
+          files: target/release/${{ matrix.asset_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
