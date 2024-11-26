@@ -20,7 +20,7 @@ jobs:
           - os: macos-latest
             artifact_name: sync
             asset_name: ynab-crypto-sync-macos-silicon
-          - os: macos-15
+          - os: macos-13
             artifact_name: sync
             asset_name: ynab-crypto-sync-macos-intel
 
