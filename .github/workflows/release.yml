@@ -1,78 +1,45 @@
-name: Build and Release
+name: Release
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Cache cargo registry
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - name: Cache cargo index
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/index
-          key: ${{ runner.os }}-cargo-index
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-
-      - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
-
   release:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
-        arch: [ x86_64, aarch64 ]
         include:
-          # macOS arm64 (Silicon) support requires explicit specification
+          - os: ubuntu-latest
+            artifact_name: sync
+          - os: windows-latest
+            artifact_name: sync.exe
           - os: macos-latest
-            arch: aarch64
-          - os: macos-latest
-            arch: x86_64
+            artifact_name: sync
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Rust
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.arch }}-unknown-${{ matrix.os }}
           override: true
 
-      - name: Install build dependencies
-        run: |
-          rustup target add ${{ matrix.arch }}-unknown-${{ matrix.os }}
+      - name: Build project
+        run: cargo build --release
 
-      - name: Build the binary
-        run: |
-          cargo build --release --target ${{ matrix.arch }}-unknown-${{ matrix.os }}
-
-      - name: Upload binary artifacts
-        uses: actions/upload-artifact@v3
+      - name: Create release
+        uses: softprops/action-gh-release@v1
         with:
-          name: ${{ matrix.os }}-${{ matrix.arch }}
-          path: target/${{ matrix.arch }}-unknown-${{ matrix.os }}/release/
+          files: |
+            target/release/${{ matrix.artifact_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/${{ matrix.artifact_name }}
