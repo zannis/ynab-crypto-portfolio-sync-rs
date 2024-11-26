@@ -2,11 +2,11 @@ name: Release
 
 on:
   pull_request:
-    tags:
-      - "v*"
+  #    tags:
+  #      - "v*"
   push:
-    tags:
-      - "v*"
+#    tags:
+#      - "v*"
 
 jobs:
   release:
